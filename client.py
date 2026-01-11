@@ -1,43 +1,40 @@
-#!/usr/bin/python3
-
-# client script to connect to the server
-# Note : please ask server for IP and port address
-
 import socket, getpass
 from time import sleep
-from os import system
-from simplecrypt import encrypt,decrypt
+from cryptography.fernet import Fernet
 
+def chat(host, port):
+    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    print("Connecting to the server...")
+    sleep(2)
+    client.connect((host, port))
+    print(f"Connected to server {host}:{port}")
 
-# chat method to start cennecting to server and
-# start chatting
-def chat(host,port):
-	server = socket.socket(socket.AF_INET,socket.SOCK_STREAM) # creating socket
-	system("clear")
-	print("Connecting to server...")
-	sleep(5)
-	server.connect((host, port))
-	print("Connected to server {}:{}".format(host,port))
-	name = input("Your name : ") # name to identify your self
-	passwd = getpass.getpass("Enter password set by client for encrypted chat : ") # password to encrypt chat msgs
-	while True:
-		msg = input("Me : ")
+    name = input("Your name: ")
+    password = getpass.getpass("Enter password for encrypted chat: ")
+    key = Fernet.generate_key()
+    cipher = Fernet(key)
 
-		encMsg = encrypt(passwd,(name+" : "+msg)) # encrypting msg
-		if msg.lower() == "bye":
-			server.send(encMsg) # sending encrypted msg
-			server.close()
-			exit(0)
-		else:
-			server.send(encMsg) # sending encrypted msg
-		print(decrypt(passwd,server.recv(1024)).decode('utf-8')) # receive msg and decrypt
+    while True:
+        msg = input("Me: ")
+        enc_msg = cipher.encrypt(f"{name}: {msg}".encode())
+        client.send(enc_msg)
 
-if __name__ == '__main__':
-	print("Ask the server maintainer for server IP and PORT")
-	host = input("Enter the server IP address : ")
-	port = int(input("Enter the server PORT : "))
-	try:
-		chat(host,port)
-	except KeyboardInterrupt:
-		print("\nKeyboard Interrupted ! \nBye bye...")
-		exit()
+        if msg.lower() == "bye":
+            client.close()
+            print("Disconnected from server.")
+            break
+
+        response = client.recv(1024)
+        print(cipher.decrypt(response).decode())
+
+if __name__ == "__main__":
+    print("Ask the server maintainer for server IP and PORT.")
+    host = input("Enter the server IP address: ")
+    port = int(input("Enter the server PORT: "))
+
+    try:
+        chat(host, port)
+    except KeyboardInterrupt:
+        print("\nDisconnected. Bye!")
+    except Exception as e:
+        print(f"Error: {e}")
