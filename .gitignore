@@ -62,3 +62,6 @@ htmlcov/
 # Local configuration
 .env
 .env.local
+
+# Received images
+received_images/
