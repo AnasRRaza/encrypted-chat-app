@@ -15,6 +15,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.backends import default_backend
+import encryption_viewer
 
 # Protocol constants
 MSG_TYPE_TEXT = 0x00
@@ -100,6 +101,9 @@ def send_message(sock, msg_type, payload, cipher):
         payload: Dictionary to send (will be JSON-serialized)
         cipher: Fernet cipher for encryption
 
+    Returns:
+        The encrypted payload bytes (for logging purposes)
+
     Raises:
         ValueError: If payload exceeds MAX_MESSAGE_SIZE
         ConnectionError: If socket fails
@@ -123,6 +127,8 @@ def send_message(sock, msg_type, payload, cipher):
     # Send atomically
     send_all(sock, full_message)
 
+    return encrypted_payload
+
 
 def recv_message(sock, cipher):
     """
@@ -133,7 +139,7 @@ def recv_message(sock, cipher):
         cipher: Fernet cipher for decryption
 
     Returns:
-        Tuple of (message_type, payload_dict)
+        Tuple of (message_type, payload_dict, encrypted_payload_bytes)
 
     Raises:
         ConnectionError: If socket closes unexpectedly
@@ -159,7 +165,7 @@ def recv_message(sock, cipher):
     decrypted_data = cipher.decrypt(encrypted_payload)
     payload = json.loads(decrypted_data.decode('utf-8'))
 
-    return msg_type, payload
+    return msg_type, payload, encrypted_payload
 
 
 def read_image_file(filepath):
@@ -260,19 +266,36 @@ def chat(host, port):
     key = derive_key_from_password(password, FIXED_SALT)
     cipher_suite = Fernet(key)
 
+    # Start the encryption viewer window
+    print("\nStarting Encryption Viewer window...")
+    encryption_viewer.start_viewer()
+    print("Encryption Viewer is now running in a separate window.")
+    print("All messages will be logged with their encrypted versions.\n")
+
     while True:
         # Receive message from client
         try:
-            msg_type, payload = recv_message(client, cipher_suite)
+            msg_type, payload, encrypted_data = recv_message(client, cipher_suite)
 
             if msg_type == MSG_TYPE_TEXT:
                 print(f"{payload['sender']}: {payload['message']}")
+
+                # Log to encryption viewer
+                encryption_viewer.log_message(
+                    "RECEIVED",
+                    payload['sender'],
+                    "TEXT",
+                    encrypted_data,
+                    payload['message']
+                )
 
                 # Check if client is saying goodbye
                 if payload['message'].lower() == "bye":
                     # Send goodbye response
                     response = {"sender": name, "message": "Goodbye!"}
-                    send_message(client, MSG_TYPE_TEXT, response, cipher_suite)
+                    enc_data = send_message(client, MSG_TYPE_TEXT, response, cipher_suite)
+                    encryption_viewer.log_message("SENT", name, "TEXT", enc_data, "Goodbye!")
+                    encryption_viewer.stop_viewer()
                     client.close()
                     server.close()
                     system("pkill -f 'ssh -R 9568:0.0.0.0:9568 serveo.net'")
@@ -291,8 +314,18 @@ def chat(host, port):
                 print(f"{payload['sender']}: [IMAGE RECEIVED: {payload['filename']} ({size_kb:.1f} KB)]")
                 print(f"Saved to: {filepath}")
 
+                # Log to encryption viewer
+                encryption_viewer.log_message(
+                    "RECEIVED",
+                    payload['sender'],
+                    "IMAGE",
+                    encrypted_data,
+                    f"[IMAGE: {payload['filename']} ({size_kb:.1f} KB)]"
+                )
+
         except ConnectionError:
             print("Client disconnected.")
+            encryption_viewer.stop_viewer()
             break
         except InvalidToken:
             print("ERROR: Decryption failed. Password mismatch?")
@@ -322,8 +355,17 @@ def chat(host, port):
                 }
 
                 print(f"[Sending image: {filename} ({len(image_data) / 1024:.1f} KB)...]")
-                send_message(client, MSG_TYPE_IMAGE, payload, cipher_suite)
+                enc_data = send_message(client, MSG_TYPE_IMAGE, payload, cipher_suite)
                 print("[Image sent successfully]")
+
+                # Log to encryption viewer
+                encryption_viewer.log_message(
+                    "SENT",
+                    name,
+                    "IMAGE",
+                    enc_data,
+                    f"[IMAGE: {filename} ({len(image_data) / 1024:.1f} KB)]"
+                )
 
             except FileNotFoundError:
                 print(f"ERROR: File not found: {filepath}")
@@ -335,7 +377,9 @@ def chat(host, port):
         elif msg.lower() == "bye":
             # Send goodbye message
             payload = {"sender": name, "message": msg}
-            send_message(client, MSG_TYPE_TEXT, payload, cipher_suite)
+            enc_data = send_message(client, MSG_TYPE_TEXT, payload, cipher_suite)
+            encryption_viewer.log_message("SENT", name, "TEXT", enc_data, msg)
+            encryption_viewer.stop_viewer()
             client.close()
             server.close()
             system("pkill -f 'ssh -R 9568:0.0.0.0:9568 serveo.net'")
@@ -344,7 +388,10 @@ def chat(host, port):
         else:
             # Send regular text message
             payload = {"sender": name, "message": msg}
-            send_message(client, MSG_TYPE_TEXT, payload, cipher_suite)
+            enc_data = send_message(client, MSG_TYPE_TEXT, payload, cipher_suite)
+
+            # Log to encryption viewer
+            encryption_viewer.log_message("SENT", name, "TEXT", enc_data, msg)
 
 
 if __name__ == '__main__':

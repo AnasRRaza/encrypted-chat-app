@@ -128,7 +128,7 @@ def recv_message(sock, cipher):
         cipher: Fernet cipher for decryption
 
     Returns:
-        Tuple of (message_type, payload_dict)
+        Tuple of (message_type, payload_dict, encrypted_payload_bytes)
 
     Raises:
         ConnectionError: If socket closes unexpectedly
@@ -154,7 +154,7 @@ def recv_message(sock, cipher):
     decrypted_data = cipher.decrypt(encrypted_payload)
     payload = json.loads(decrypted_data.decode('utf-8'))
 
-    return msg_type, payload
+    return msg_type, payload, encrypted_payload
 
 
 def read_image_file(filepath):
@@ -285,7 +285,7 @@ def chat(host, port):
 
         # Receive response
         try:
-            msg_type, response = recv_message(client, cipher)
+            msg_type, response, _ = recv_message(client, cipher)
 
             if msg_type == MSG_TYPE_TEXT:
                 print(f"{response['sender']}: {response['message']}")

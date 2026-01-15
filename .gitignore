@@ -65,3 +65,6 @@ htmlcov/
 
 # Received images
 received_images/
+
+# Encryption viewer log
+encryption_log.json
